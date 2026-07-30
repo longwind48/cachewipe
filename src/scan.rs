@@ -1,10 +1,12 @@
-//! Fast directory sizing and lock detection.
+//! Directory sizing and lock detection.
 //!
-//! Sizing is a parallel walk (jwalk) because one cache directory routinely holds
-//! most of the files on the whole scan — a uv cache with 190k entries was 72% of
-//! a real run, and a single-threaded walk over it was slower than `du`. jwalk
-//! spreads the readdir/lstat syscalls across threads, which is where the time
-//! actually goes.
+//! Sizing uses jwalk, which parallelises the walk. That helped (a 193k-file cache
+//! went from 8.7s to ~2.4s against the old hand-rolled recursion) but it is not
+//! where the remaining time goes: `bench/bench.sh` shows BSD `du` finishing the
+//! same tree ~11x faster than this, and capping jwalk's thread pool changes
+//! nothing. The gap is syscall strategy — `du` uses fts(3) to stream directory
+//! entries, while this does a stat per file. An fts-style batched reader is the
+//! open optimisation; see the Benchmarks section of the README.
 //!
 //! Two settings here are load-bearing rather than incidental:
 //! `follow_links(false)` keeps a symlinked cache from being used to size (and
@@ -38,9 +40,11 @@ pub fn size_dir(path: &Path) -> DirStat {
         .into_iter()
         .flatten()
     {
-        // client_state is unused; we only need the metadata jwalk already has.
-        let Ok(meta) = entry.metadata() else { continue };
-        let ft = meta.file_type();
+        // Branch on the file_type jwalk captured during readdir. Calling
+        // entry.metadata() here instead would issue a second stat for every
+        // entry, including directories we don't measure — 200k redundant
+        // syscalls on a cache-sized tree.
+        let ft = entry.file_type();
         if ft.is_symlink() {
             stat.files += 1;
             continue;
@@ -48,6 +52,8 @@ pub fn size_dir(path: &Path) -> DirStat {
         if ft.is_dir() {
             continue; // directory inodes themselves add no meaningful bytes
         }
+        // Only regular files need a stat, for length and mtime.
+        let Ok(meta) = entry.metadata() else { continue };
         stat.bytes += meta.len();
         stat.files += 1;
         if let Ok(m) = meta.modified() {

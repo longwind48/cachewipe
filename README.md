@@ -68,8 +68,9 @@ Four things make that claim checkable rather than promised:
 - **Refuses on doubt** — `/`, `$HOME`, symlink escapes, and caches with a live
   lockfile are all declined. [`src/safety.rs`](src/safety.rs) is 184 readable
   lines; [15 tests](#tests) prove it against a real filesystem.
-- **Fast** — sizes a 193k-file cache in **2.4 s**, vs `du -sk`'s 3.8 s on the same
-  directory. [How that's measured →](#benchmarks)
+- **Honestly measured** — a real hyperfine benchmark against `du`, `dust`, `gdu`
+  and `diskus`, published even though cachewipe loses on sizing speed.
+  [See the numbers →](#benchmarks)
 - **Offline** — no network code, no telemetry, three dependencies.
   [SECURITY.md](SECURITY.md) has the threat model.
 
@@ -239,27 +240,45 @@ stay off without the flag, and that artifacts need a `--root`.
 
 ## Benchmarks
 
-M-series Mac, warm cache, best of three:
+Reproduce everything below with `bash bench/bench.sh` — it generates the tree,
+checks the tools agree on the totals, and runs
+[hyperfine](https://github.com/sharkdp/hyperfine).
 
-| Sizing a 193k-file uv cache | Time |
-|---|---|
-| **cachewipe** | **2.4 s** |
-| `du -sk` | 3.8 s |
+**Sizing 200,000 files (4 KiB each, ~800 MB) on an M4 Mac, APFS, warm cache.**
+10 runs, 3 warmups:
 
-```bash
-/usr/bin/time -p cachewipe            # sizing
-/usr/bin/time -p du -sk ~/.cache/uv   # same work, for comparison
-```
+| Tool | Mean | vs `du` |
+|---|---|---|
+| `du -sk` | **644 ms** ± 24 | 1.00× |
+| `dust` | 3,612 ms ± 141 | 5.6× slower |
+| `gdu` | 4,747 ms ± 112 | 7.4× slower |
+| `diskus` | 4,949 ms ± 153 | 7.7× slower |
+| **cachewipe** | **7,460 ms** ± 100 | **11.6× slower** |
 
-Deleting 20,000 cached files takes 3.2 s.
+**cachewipe is the slowest tool in this comparison.** Deleting is separate and
+fine — 20,000 files in 3.2 s — but sizing has real headroom, and an earlier
+version of this README claimed it beat `du`. That was wrong: it came from timing
+`du` on one directory while cachewipe scanned a different set.
 
-Two notes on method, since disk-usage benchmarks are easy to fudge. `du` is the
-right comparison because it also `stat`s every file to get sizes; name-only
-walkers like `fd` clear the same directory in under a second but never ask how
-big anything is, which is the expensive part and the whole job here. And sizing
-is parallel ([jwalk](https://crates.io/crates/jwalk)) because a single cache
-directory is typically most of a scan — one uv cache was 72% of all files walked
-on a real run, so parallelising the loop over targets would have bought nothing.
+What the numbers say, if you're considering contributing:
+
+- BSD `du` uses `fts(3)`, which streams directory entries with far fewer syscalls
+  than a per-entry `stat`. It beats every parallel Rust/Go tool here, so the win
+  is in syscall strategy, not thread count.
+- Parallelism isn't the lever. Capping jwalk's pool at 4 threads changed nothing
+  (15.1× vs 15.0× in testing), and cachewipe shows **636k involuntary context
+  switches** against `du`'s 10k — the threads are contending, not working.
+- Fixed overhead is not the problem either: an empty scan completes in 23 ms.
+
+For a weekly background job, 7 s on a 200k-file cache is acceptable, which is why
+this ships as-is. If it bothers you, `size_dir` in
+[`src/scan.rs`](src/scan.rs) is ~30 lines and an `fts`-style batched reader is the
+obvious experiment.
+
+Why these tools and not `fd` or `find`: every tool above walks the tree **and
+stats each file to total its size**, which is what cachewipe does. Name-only
+walkers finish the same directory in well under a second because they never ask
+how big anything is — the expensive part, and the whole job here.
 
 ## Trust note
 
