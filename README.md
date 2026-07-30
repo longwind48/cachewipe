@@ -32,6 +32,12 @@ npx skills add longwind48/cachewipe skill cachewipe -a claude-code
 Then just tell Claude "I'm low on disk space" or set up a `/loop`. The skill
 builds the binary on first run.
 
+> **Trust note:** `npx skills add` fetches and runs code from this repo. Before
+> installing a tool that can delete files, review the source — it's short by
+> design (`src/targets.rs` = what it touches, `src/safety.rs` = how it refuses
+> everything else) — or pin to a tagged release commit rather than `main`. The
+> binary is built locally from that source; it is never downloaded prebuilt.
+
 ### As a standalone CLI
 
 ```bash
