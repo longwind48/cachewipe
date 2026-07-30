@@ -26,7 +26,7 @@ Reclaimable: 45.6GB   (run again with --apply to delete)
 ### As a Claude Code / Claude skill (easiest)
 
 ```bash
-npx skills add OWNER/cachewipe skill cachewipe -a claude-code
+npx skills add longwind48/cachewipe skill cachewipe -a claude-code
 ```
 
 Then just tell Claude "I'm low on disk space" or set up a `/loop`. The skill
@@ -35,7 +35,7 @@ builds the binary on first run.
 ### As a standalone CLI
 
 ```bash
-git clone https://github.com/OWNER/cachewipe && cd cachewipe
+git clone https://github.com/longwind48/cachewipe && cd cachewipe
 cargo build --release
 ./target/release/cachewipe --help
 ```
