@@ -1,0 +1,25 @@
+[package]
+name = "cachewipe"
+version = "0.1.0"
+edition = "2021"
+description = "Fast, safe reclaimer of regenerable cache and build files. Reports by default, deletes only on --apply."
+license = "MIT"
+repository = "https://github.com/OWNER/cachewipe"
+readme = "README.md"
+keywords = ["cache", "disk", "cleanup", "storage", "prune"]
+categories = ["command-line-utilities", "filesystem"]
+
+[[bin]]
+name = "cachewipe"
+path = "src/main.rs"
+
+[dependencies]
+# ponytail: stdlib does 95% of this. Two small, widely-vetted deps only.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+panic = "abort"
