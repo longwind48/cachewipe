@@ -17,9 +17,6 @@ path = "src/main.rs"
 # Kept deliberately small so the whole tree stays auditable.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Parallel directory walk. A single cache dir is often the bulk of a scan, and a
-# single-threaded walk over it measured slower than `du`; see src/scan.rs.
-jwalk = "0.8"
 
 [profile.release]
 opt-level = 3

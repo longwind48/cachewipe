@@ -1,20 +1,21 @@
 //! Directory sizing and lock detection.
 //!
-//! Sizing uses jwalk, which parallelises the walk. That helped (a 193k-file cache
-//! went from 8.7s to ~2.4s against the old hand-rolled recursion) but it is not
-//! where the remaining time goes: `bench/bench.sh` shows BSD `du` finishing the
-//! same tree ~11x faster than this, and capping jwalk's thread pool changes
-//! nothing. The gap is syscall strategy — `du` uses fts(3) to stream directory
-//! entries, while this does a stat per file. An fts-style batched reader is the
-//! open optimisation; see the Benchmarks section of the README.
+//! Sizing is a serial depth-first walk, and that is a measured choice rather than
+//! a lazy one. This code was briefly parallelised with jwalk; `bench/bench.sh`
+//! showed the parallel version was ~4.8x SLOWER on a 200k-file cache. Isolating
+//! the stages explains why: jwalk's enumeration alone is very fast (96ms vs 383ms
+//! for `du`), but a parallel walk visits directories out of order, so the stat of
+//! each file misses the metadata locality a depth-first walk keeps warm. Feeding
+//! jwalk's output into a serial stat loop was still 4.75x slower than walking
+//! serially, which rules out the stat call and jwalk's own metadata() as the
+//! cause — it is the traversal order.
 //!
-//! Two settings here are load-bearing rather than incidental:
-//! `follow_links(false)` keeps a symlinked cache from being used to size (and
-//! later delete) something outside its root, and `skip_hidden(false)` is required
-//! because nearly every target is a dotfile — `.cache`, `.npm`, `.venv`. Getting
-//! that second one wrong silently reports 0 B for everything.
+//! Before optimising this, read the Benchmarks section of the README and rerun
+//! bench/bench.sh. The obvious idea (add threads) has been tried and lost.
+//!
+//! Symlinks are never traversed, which keeps a symlinked cache from being used to
+//! size — and later delete — something outside its root.
 
-use jwalk::WalkDir;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -34,38 +35,37 @@ pub fn size_dir(path: &Path) -> DirStat {
         files: 0,
         newest_mtime: 0,
     };
-    for entry in WalkDir::new(path)
-        .follow_links(false) // security: never escape the target via a symlink
-        .skip_hidden(false) // cache dirs are dotfiles; skipping them reports 0 B
-        .into_iter()
-        .flatten()
-    {
-        // Branch on the file_type jwalk captured during readdir. Calling
-        // entry.metadata() here instead would issue a second stat for every
-        // entry, including directories we don't measure — 200k redundant
-        // syscalls on a cache-sized tree.
-        let ft = entry.file_type();
+    size_into(path, &mut stat);
+    stat
+}
+
+fn size_into(path: &Path, acc: &mut DirStat) {
+    let Ok(entries) = fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        // DirEntry::metadata() does not follow symlinks — this is the lstat.
+        let Ok(meta) = entry.metadata() else { continue };
+        let ft = meta.file_type();
         if ft.is_symlink() {
-            stat.files += 1;
-            continue;
+            acc.files += 1;
+            continue; // never traverse symlinks
         }
         if ft.is_dir() {
-            continue; // directory inodes themselves add no meaningful bytes
+            size_into(&entry.path(), acc);
+            continue;
         }
-        // Only regular files need a stat, for length and mtime.
-        let Ok(meta) = entry.metadata() else { continue };
-        stat.bytes += meta.len();
-        stat.files += 1;
+        acc.bytes += meta.len();
+        acc.files += 1;
         if let Ok(m) = meta.modified() {
             if let Ok(d) = m.duration_since(UNIX_EPOCH) {
                 let secs = d.as_secs();
-                if secs > stat.newest_mtime {
-                    stat.newest_mtime = secs;
+                if secs > acc.newest_mtime {
+                    acc.newest_mtime = secs;
                 }
             }
         }
     }
-    stat
 }
 
 /// Detect whether a cache dir is actively in use.

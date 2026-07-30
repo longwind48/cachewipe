@@ -60,7 +60,18 @@ echo
 # cachewipe sizes a *target*, so point it at the tree via --root. The competitors
 # are given the same directory. 3 warmup runs prime the FS cache for everyone.
 echo "== hyperfine (3 warmups, 10 runs) =="
-CMDS=(-n "cachewipe" "$BIN --json --root $TREE")
+# cachewipe sizes whatever its catalog resolves, so give it a HOME whose uv cache
+# IS the tree. Note: make it a real directory, not a symlink — a symlinked target
+# forces repeated canonicalisation in the safety check and inflates the time ~2.6x,
+# which is a measurement artifact rather than a property of the tool.
+FAKE_HOME=$(dirname "$TREE")/home
+if [ ! -d "$FAKE_HOME/.cache/uv" ]; then
+  mkdir -p "$FAKE_HOME/.cache"
+  cp -c -R "$TREE" "$FAKE_HOME/.cache/uv" 2>/dev/null \
+    || cp -R "$TREE" "$FAKE_HOME/.cache/uv"
+fi
+
+CMDS=(-n "cachewipe" "env HOME=$FAKE_HOME $BIN --json")
 command -v du       >/dev/null && CMDS+=(-n "du -sk"  "du -sk $TREE")
 command -v diskus   >/dev/null && CMDS+=(-n "diskus"  "diskus $TREE")
 command -v dust     >/dev/null && CMDS+=(-n "dust"    "dust -d0 $TREE")

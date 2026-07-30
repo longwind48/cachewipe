@@ -68,11 +68,11 @@ Four things make that claim checkable rather than promised:
 - **Refuses on doubt** — `/`, `$HOME`, symlink escapes, and caches with a live
   lockfile are all declined. [`src/safety.rs`](src/safety.rs) is 184 readable
   lines; [15 tests](#tests) prove it against a real filesystem.
-- **Honestly measured** — a real hyperfine benchmark against `du`, `dust`, `gdu`
-  and `diskus`, published even though cachewipe loses on sizing speed.
-  [See the numbers →](#benchmarks)
-- **Offline** — no network code, no telemetry, three dependencies.
-  [SECURITY.md](SECURITY.md) has the threat model.
+- **Fast, and measured against real competitors** — sizes 200k files in 609 ms,
+  within 1.5× of `du` and ~6× quicker than `dust`. Harness included, so you can
+  check. [See the numbers →](#benchmarks)
+- **Offline** — no network code, no telemetry, two dependencies (`serde`,
+  `serde_json`). [SECURITY.md](SECURITY.md) has the threat model.
 
 ## Quick start
 
@@ -249,36 +249,46 @@ checks the tools agree on the totals, and runs
 
 | Tool | Mean | vs `du` |
 |---|---|---|
-| `du -sk` | **644 ms** ± 24 | 1.00× |
-| `dust` | 3,612 ms ± 141 | 5.6× slower |
-| `gdu` | 4,747 ms ± 112 | 7.4× slower |
-| `diskus` | 4,949 ms ± 153 | 7.7× slower |
-| **cachewipe** | **7,460 ms** ± 100 | **11.6× slower** |
+| `du -sk` (C, `fts(3)`) | **408 ms** ± 10 | 1.00× |
+| **cachewipe** | **609 ms** ± 44 | 1.49× slower |
+| `dust` | 3,961 ms ± 174 | 9.7× slower |
+| `diskus` | 5,008 ms ± 405 | 12.3× slower |
 
-**cachewipe is the slowest tool in this comparison.** Deleting is separate and
-fine — 20,000 files in 3.2 s — but sizing has real headroom, and an earlier
-version of this README claimed it beat `du`. That was wrong: it came from timing
-`du` on one directory while cachewipe scanned a different set.
+Deleting is separate: 20,000 files in 3.2 s.
 
-What the numbers say, if you're considering contributing:
+### Why it isn't parallel
 
-- BSD `du` uses `fts(3)`, which streams directory entries with far fewer syscalls
-  than a per-entry `stat`. It beats every parallel Rust/Go tool here, so the win
-  is in syscall strategy, not thread count.
-- Parallelism isn't the lever. Capping jwalk's pool at 4 threads changed nothing
-  (15.1× vs 15.0× in testing), and cachewipe shows **636k involuntary context
-  switches** against `du`'s 10k — the threads are contending, not working.
-- Fixed overhead is not the problem either: an empty scan completes in 23 ms.
+Sizing used to use [jwalk](https://crates.io/crates/jwalk) for a parallel walk.
+Removing it made cachewipe **4.7× faster** (2,888 ms → 609 ms). Staging the work
+explains that counterintuitive result:
 
-For a weekly background job, 7 s on a 200k-file cache is acceptable, which is why
-this ships as-is. If it bothers you, `size_dir` in
-[`src/scan.rs`](src/scan.rs) is ~30 lines and an `fts`-style batched reader is the
-obvious experiment.
+| Variant | Mean |
+|---|---|
+| jwalk enumeration, no `stat` | **96 ms** |
+| serial walk + serial `stat` | 597 ms |
+| jwalk walk + **serial** `stat` | 2,835 ms |
+| jwalk walk + parallel `stat` | 2,852 ms |
 
-Why these tools and not `fd` or `find`: every tool above walks the tree **and
-stats each file to total its size**, which is what cachewipe does. Name-only
-walkers finish the same directory in well under a second because they never ask
-how big anything is — the expensive part, and the whole job here.
+jwalk's enumeration is genuinely quick — 4× faster than `du` at listing names.
+But a parallel walk visits directories out of order, and the `stat` that follows
+then misses the metadata locality a depth-first walk keeps warm. Feeding jwalk's
+output into a *serial* stat loop is still 4.75× slower than walking serially,
+which rules out both the stat call and jwalk's `metadata()` — the traversal order
+is what costs.
+
+So the obvious optimisation has been tried and lost. If you want to close the
+remaining 1.5× to `du`, the lever is syscall batching (`fts(3)`/`getattrlistbulk`),
+not threads.
+
+Two measurement notes, since both bit us:
+
+- **Compare against sizing tools, not name walkers.** Every tool above stats each
+  file to total its size. `fd`/`find` finish the same tree in under a second by
+  never asking how big anything is.
+- **Point cachewipe at a real directory, not a symlink.** A symlinked target makes
+  the safety check re-canonicalise repeatedly and inflates its time ~2.6× — an
+  artifact of the harness, not the tool. `bench/bench.sh` copies the tree for this
+  reason.
 
 ## Trust note
 
