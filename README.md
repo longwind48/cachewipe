@@ -37,9 +37,20 @@ pull. An install that dies at 97%.
 So you go hunting. Finder says the disk is full but not what's eating it. You
 delete some downloads, empty the trash, buy back 2 GB, and you're full again next
 week. Meanwhile the actual culprit is invisible: **package caches and build
-artifacts.** A `~/.cache/uv` that quietly grew to 340 GB. Forty old projects each
-holding a 900 MB `node_modules` you'll never run again. `.venv`, `target/`,
-`.next`, dangling Docker layers.
+artifacts.**
+
+How much is it really? Some anchors:
+
+| | Typical size | Source |
+|---|---|---|
+| One `node_modules` | **340 MB** median (720 MB at p75) | [measured across npm projects, 2026](https://enterno.io/en/s/research-npm-dependencies-median-2026) |
+| 10–20 projects' worth | 5–15 GB | [reported range](https://www.cluttered.dev/blog/delete-node-modules) |
+| Docker, left unpruned | tens of GB | [reported range](https://khides.com/en/blog/developer-disk-cleanup/) |
+| A neglected package cache | **340 GB** | this tool exists because of one |
+
+That last row isn't a typo and isn't hypothetical — it's the `~/.cache/uv` that
+prompted cachewipe. Package managers rarely evict anything, so a cache pinned to
+`@latest` keeps every version it ever downloaded, forever.
 
 Here's the thing about all of that: **none of it is data.** Every byte regenerates
 — `npm install` re-downloads it, `cargo build` remakes it. It's the safest space
@@ -57,6 +68,51 @@ until you say so.
   <br/><sub>Dry-run reports 5.0 GB across 9 caches — then <code>--apply</code> reclaims it.<br/>
   Recorded against a sandbox home; re-render with <code>vhs demo/demo.tape</code>.</sub>
 </p>
+
+## Why you can trust it with `rm`
+
+Any tool that deletes files is asking for a lot of trust. Four reasons to extend
+it here — each one checkable rather than promised.
+
+**The rules are code, not documentation.** cachewipe can only delete paths that a
+target in [`src/targets.rs`](src/targets.rs) resolved; there's no
+arbitrary-path delete anywhere in it. Every candidate then passes
+[`src/safety.rs`](src/safety.rs) — 184 lines you can read in a sitting — which
+refuses `/`, `$HOME`, any ancestor of home, anything shallower than two path
+components, and anything a symlink could reach outside its root. [15 tests](#tests)
+assert this against a real filesystem, including that a dry-run leaves every byte
+in place.
+
+**It refuses when it isn't sure.** A cache with a fresh package-manager lockfile
+is in use, so cachewipe declines it rather than corrupt a running install. That
+check exists because deleting a locked cache mid-operation is exactly how this
+went wrong once.
+
+**It's fast enough to run weekly — and honest about not being a speed record.**
+Measured on an M-series Mac against a real home directory:
+
+| Operation | Measured |
+|---|---|
+| Scan + size 268,575 files across a home + projects tree | **~19 s** (~14k files/sec) |
+| Delete 20,000 cached files | **3.2 s** (~6.3k files/sec) |
+
+Reproduce with `/usr/bin/time -p cachewipe --root ~/projects`. Sizing is a single
+`std::fs` walk that never follows symlinks — no `du` subprocess, no shell.
+
+For context, dedicated parallel disk-usage tools are faster at the walking part:
+[`fdu` reports 554k files in 4.1 s](https://github.com/montanaflynn/fdu) and
+[`dumac` beats `du` by 6.4×](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)
+on macOS, both using multiple threads and batched metadata syscalls. cachewipe's
+walk is single-threaded, so per-file it's several times slower than those. That's
+a deliberate trade for now — the scan is a once-a-week background action, and the
+simpler code is code you can audit before letting it delete things. If scan time
+ever becomes the reason you skip running it, parallelising `size_dir` is the
+obvious fix and a welcome PR.
+
+**Nothing leaves your machine.** No network code, no telemetry, two dependencies
+(`serde`, `serde_json`), and the only subprocess is `docker` with fixed arguments.
+`grep -r reqwest src/` comes back empty. See [SECURITY.md](SECURITY.md) for the
+threat model.
 
 ## Quick start
 
