@@ -1,0 +1,23 @@
+[
+  {"query": "my macbook says startup disk almost full and i cant even save files anymore, i do a lot of python and node dev. what can i clear out safely?", "should_trigger": true},
+  {"query": "docker keeps eating my SSD, i've got like 40gb of images i dont use. clean it up but dont nuke the ones im actually running", "should_trigger": true},
+  {"query": "free up some space on this machine before i try to build the release, the build failed with ENOSPC last time", "should_trigger": true},
+  {"query": "can you set up a /loop that checks my disk usage every day and clears out junk build files if they pile up", "should_trigger": true},
+  {"query": "i have ~/dev with maybe 30 old projects, most of them have node_modules and .venv i haven't touched in months. reclaim that storage", "should_trigger": true},
+  {"query": "uv cache is somehow 300GB?? get rid of it", "should_trigger": true},
+  {"query": "df -h shows 96% used on / and I need headroom fast, i'm a data scientist so lots of huggingface downloads and conda/pip stuff", "should_trigger": true},
+  {"query": "whats taking up all my space and can you clean the regenerable stuff without touching my actual code or datasets", "should_trigger": true},
+  {"query": "cargo target dirs and .next folders everywhere are bloating my drive, wipe the ones that'll just rebuild", "should_trigger": true},
+  {"query": "before i clone this huge monorepo I want to clear caches so i dont run out of room mid-clone", "should_trigger": true},
+
+  {"query": "my redis cache keeps returning stale values, how do I set a proper TTL and invalidate keys when the underlying row changes?", "should_trigger": false},
+  {"query": "the browser is caching my css so users see the old styles, how do i add cache-busting hashes to my webpack build output", "should_trigger": false},
+  {"query": "clear the CloudFront cache for my site, i just deployed and the old index.html is still being served", "should_trigger": false},
+  {"query": "explain how the CPU L1/L2 cache works and why cache misses hurt performance in this tight loop", "should_trigger": false},
+  {"query": "my node_modules is missing a dependency after i pulled, can you figure out why npm install isn't adding it", "should_trigger": false},
+  {"query": "set up a memoization cache for this expensive API call so we dont refetch the same user profile every render", "should_trigger": false},
+  {"query": "docker build is slow because it re-downloads layers every time, how do i structure the Dockerfile so the dependency layer is cached properly", "should_trigger": false},
+  {"query": "our S3 bucket storage costs are climbing, help me set up a lifecycle policy to move old objects to Glacier", "should_trigger": false},
+  {"query": "the disk on my RDS instance is filling up from WAL logs, whats the right way to handle that on the AWS side", "should_trigger": false},
+  {"query": "git says my repo is huge because someone committed a 2GB binary years ago, how do i purge it from history to shrink the .git dir", "should_trigger": false}
+]

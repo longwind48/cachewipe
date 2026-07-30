@@ -23,16 +23,24 @@ find ~/projects -type d \( -name node_modules -o -name .venv -o -name .next \
 
 ## Apply (only after reviewing the report)
 
+> **WARNING:** the commands below permanently delete directories. They are
+> regenerable caches/build outputs, but review the dry-run report first and be
+> sure you understand which paths are affected. Prefer the Rust binary, which
+> enforces these safeguards in tested code rather than trusting you to.
+
 The Rust binary enforces dry-run-first, path confinement, and lock detection in
 code. This shell version can't, so it substitutes an explicit confirmation and a
 required, echoed scope — never a blind `rm -rf`. Prefer the Rust binary for
 anything unattended.
 
 ```bash
+set -eu   # fail fast; abort if $HOME (used below) is somehow unset
+
 # Package caches — ALWAYS prefer each tool's own `clean`, which waits on the
 # in-use lock. Only fall back to rm if the tool is absent, and only for its own
-# fixed cache path (never a variable).
-uv cache clean 2>/dev/null   || rm -rf "$HOME/.cache/uv"
+# fixed cache path. ${HOME:?} aborts rather than expanding to /.cache/uv if HOME
+# is empty — never let a destructive rm run against an unexpected root.
+uv cache clean 2>/dev/null   || rm -rf -- "${HOME:?}/.cache/uv"
 pip cache purge 2>/dev/null
 npm cache clean --force 2>/dev/null
 
