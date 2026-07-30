@@ -6,7 +6,7 @@
 Reclaim your disk. Delete nothing you'll miss.
 </pre></div>
 
-<p align="center"><strong>Rust CLI · Claude skill · dry-run by default · allowlist-only deletion · lock-aware · safe in a loop</strong></p>
+<p align="center"><strong>Rust CLI · agent skill · dry-run by default · allowlist-only deletion · lock-aware · safe in a loop</strong></p>
 
 <p align="center">
   <a href="https://github.com/longwind48/cachewipe/actions/workflows/ci.yml"><img src="https://github.com/longwind48/cachewipe/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -59,10 +59,21 @@ until you say so.
 
 ## Quick start
 
-**As a Claude skill** — say "I'm low on disk space" and it handles the rest:
+**As an agent skill** — then just say "I'm low on disk space" and it handles the
+rest:
 
 ```bash
-npx skills add longwind48/cachewipe -a claude-code
+npx skills add longwind48/cachewipe
+```
+
+That detects whichever coding assistants you have and asks where to install.
+It's not Claude-specific — [`npx skills`](https://github.com/vercel-labs/skills)
+supports Claude Code, Codex, Cursor, Zed, Warp, Cline, Continue, Crush, OpenClaw,
+Amp, Replit and dozens more. To skip the prompt:
+
+```bash
+npx skills add longwind48/cachewipe --agent '*' -y   # every agent it finds
+npx skills add longwind48/cachewipe -a codex -a cursor   # or name them
 ```
 
 **As a standalone CLI:**
