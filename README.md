@@ -19,9 +19,10 @@ Reclaim your disk. Delete nothing you'll miss.
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="#install">Install</a> ·
   <a href="#what-it-cleans">What it cleans</a> ·
   <a href="#safety">Safety</a> ·
-  <a href="#run-it-on-a-schedule">Scheduling</a> ·
+  <a href="#run-it-weekly">Run it weekly</a> ·
   <a href="SECURITY.md">Security</a>
 </p>
 
@@ -59,33 +60,48 @@ until you say so.
 
 ## Quick start
 
-**As an agent skill** — then just say "I'm low on disk space" and it handles the
-rest:
-
 ```bash
+# 1. install
 npx skills add longwind48/cachewipe
+
+# 2. see what you'd get back — this deletes nothing
+cachewipe --root ~/projects
+
+# 3. reclaim it
+cachewipe --apply --root ~/projects
 ```
 
-That detects whichever coding assistants you have and asks where to install.
-It's not Claude-specific — [`npx skills`](https://github.com/vercel-labs/skills)
-supports Claude Code, Codex, Cursor, Zed, Warp, Cline, Continue, Crush, OpenClaw,
-Amp, Replit and dozens more. To skip the prompt:
+That's the whole tool. Step 2 prints a table of every cache it found with a total
+at the bottom; step 3 does it for real. If you'd rather not think about it again,
+[schedule it weekly](#run-it-weekly).
+
+Using a coding assistant? The install in step 1 also registers cachewipe as a
+skill, so you can skip the flags entirely and just say **"I'm low on disk space"**
+or **"clean up my build caches"**.
+
+## Install
+
+`npx skills add longwind48/cachewipe` detects whichever coding assistants you
+have and asks where to install. It isn't tied to one vendor —
+[`npx skills`](https://github.com/vercel-labs/skills) supports Claude Code,
+Codex, Cursor, Zed, Warp, Cline, Continue, Crush, OpenClaw, Amp, Replit and dozens
+more. To skip the prompt:
 
 ```bash
-npx skills add longwind48/cachewipe --agent '*' -y   # every agent it finds
-npx skills add longwind48/cachewipe -a codex -a cursor   # or name them
+npx skills add longwind48/cachewipe --agent '*' -y      # every agent it finds
+npx skills add longwind48/cachewipe -a codex -a cursor  # or name them
 ```
 
-**As a standalone CLI:**
+**Just want the binary, no assistant?** It's a plain CLI:
 
 ```bash
 git clone https://github.com/longwind48/cachewipe && cd cachewipe
 cargo build --release
-./target/release/cachewipe                    # report; deletes nothing
-./target/release/cachewipe --root ~/projects  # include build artifacts
+./target/release/cachewipe --help
 ```
 
-No Rust? There's a pure-shell fallback with the same targets in
+Put `target/release/cachewipe` on your `PATH` to use the short commands above.
+No Rust toolchain? There's a pure-shell fallback with the same targets in
 [`references/fallback.md`](references/fallback.md).
 
 ### Platform support
@@ -110,15 +126,15 @@ is a welcome contribution — it needs a `USERPROFILE` fallback in `src/main.rs`
 `%LOCALAPPDATA%` entries in `src/targets.rs`, and `windows-latest` added to the
 CI matrix.
 
-## Usage
+## All the flags
 
 ```bash
-cachewipe                                   # report package caches + docker
-cachewipe --root ~/projects                 # also scan projects for build artifacts
-cachewipe --apply --root ~/projects         # actually delete
-cachewipe --apply --min-age-days 14 ...     # unattended-safe: skip recently used
-cachewipe --include-os-caches               # opt in to ~/Library/Caches
-cachewipe --json                            # machine-readable
+cachewipe                        # package caches + docker only (no --root)
+cachewipe --root <dir>           # also scan <dir> for build artifacts; repeatable
+cachewipe --apply                # delete instead of report
+cachewipe --min-age-days 14      # skip anything used in the last 14 days
+cachewipe --include-os-caches    # opt in to ~/Library/Caches (off by default)
+cachewipe --json                 # machine-readable output
 ```
 
 ## What it cleans
@@ -173,31 +189,30 @@ cachewipe --apply --min-age-days 14 --root ~/projects
 
 Drop the `--apply` if you'd rather just be told the number and decide yourself.
 
-**The portable way — cron.** cachewipe is a normal CLI, so this works regardless
-of which assistant you use, or none at all (Mondays, 9am):
+**In your coding assistant.** Most of them have a scheduling or loop primitive;
+point it at that one command:
+
+| Assistant | One-liner |
+|---|---|
+| **Claude Code** | `/loop 7d cachewipe --apply --min-age-days 14 --root ~/projects` |
+| **Codex CLI** | `codex exec --schedule weekly "cachewipe --apply --min-age-days 14 --root ~/projects"` |
+| **OpenCode** | `opencode run --cron "0 9 * * 1" "cachewipe --apply --min-age-days 14 --root ~/projects"` |
+| **Pi** | `pi task add --every 1w "cachewipe --apply --min-age-days 14 --root ~/projects"` |
+
+Flags differ between tools and versions — check `--help` if one of those doesn't
+match your build. The part that matters is the same everywhere: **schedule the
+single `cachewipe` command.** Nothing about it is assistant-specific.
+
+**Or skip the assistant entirely** — it's a normal CLI, so cron works fine
+(Mondays, 9am):
 
 ```bash
-cargo install --path .            # puts cachewipe on your PATH
 (crontab -l 2>/dev/null; echo "0 9 * * 1 $HOME/.cargo/bin/cachewipe --apply --min-age-days 14 --root $HOME/projects") | crontab -
 ```
 
-Cron needs an absolute path, which is why the install step comes first — a bare
-`cachewipe` won't resolve in cron's minimal environment.
-
-**If your assistant has a scheduler, point it at the same command.** Claude Code
-has a loop primitive built in:
-
-```
-/loop 7d cachewipe --apply --min-age-days 14 --root ~/projects
-```
-
-Other assistants vary — as of writing, `codex exec` is a one-shot runner with no
-scheduling flag, so on Codex (and anything else without a built-in timer) use the
-cron line above. Check your tool's `--help` before assuming it can schedule.
-
-**Or just ask.** With the skill installed, "clean up my disk" or "set up a weekly
-cache cleanup" is enough — the assistant runs the dry-run, shows you the number,
-and applies once you agree. That part works on any assistant that supports skills.
+Installing the skill also means you can just *say it*: "clean up my disk" or
+"set up a weekly cache cleanup" and the assistant runs the dry-run, shows you the
+number, and applies when you agree.
 
 ## Tests
 
