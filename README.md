@@ -22,6 +22,7 @@ Reclaim your disk. Delete nothing you'll miss.
   <a href="#install">Install</a> ·
   <a href="#what-it-cleans">What it cleans</a> ·
   <a href="#safety">Safety</a> ·
+  <a href="#benchmarks">Benchmarks</a> ·
   <a href="#run-it-weekly">Run it weekly</a> ·
   <a href="SECURITY.md">Security</a>
 </p>
@@ -30,16 +31,11 @@ Reclaim your disk. Delete nothing you'll miss.
 
 ## The problem
 
-You know the message. **"Your disk is almost full."** "Startup disk full."
-`ENOSPC: no space left on device` in the middle of a build. Docker refusing to
-pull. An install that dies at 97%.
+**"Your disk is almost full."** `ENOSPC` mid-build. An install that dies at 97%.
 
-So you go hunting. Finder says the disk is full but not what's eating it. You
-delete some downloads, empty the trash, buy back 2 GB, and you're full again next
-week. Meanwhile the actual culprit is invisible: **package caches and build
+So you go hunting — delete some downloads, empty the trash, buy back 2 GB, full
+again next week. The real culprit is invisible: **package caches and build
 artifacts.**
-
-How much is it really? Some anchors:
 
 | | Typical size | Source |
 |---|---|---|
@@ -48,19 +44,15 @@ How much is it really? Some anchors:
 | Docker, left unpruned | tens of GB | [reported range](https://khides.com/en/blog/developer-disk-cleanup/) |
 | A neglected package cache | **340 GB** | this tool exists because of one |
 
-That last row isn't a typo and isn't hypothetical — it's the `~/.cache/uv` that
-prompted cachewipe. Package managers rarely evict anything, so a cache pinned to
-`@latest` keeps every version it ever downloaded, forever.
+That last row is real, not hypothetical — package managers rarely evict anything,
+so a cache pinned to `@latest` keeps every version it ever downloaded.
 
-Here's the thing about all of that: **none of it is data.** Every byte regenerates
-— `npm install` re-downloads it, `cargo build` remakes it. It's the safest space
-on your machine to delete, and it's usually the largest. The reason people don't
-reclaim it is that the commands are scary (`rm -rf` with a glob, at 2am, on a full
-disk) and it's genuinely hard to tell which directories are cache and which are
-your work.
+**None of it is data.** Every byte regenerates: `npm install` re-downloads it,
+`cargo build` remakes it. It's the safest space on your disk to delete and usually
+the largest — people leave it because `rm -rf` with a glob at 2am is a bad idea
+and telling cache from work is genuinely hard.
 
-cachewipe draws that line for you. It knows which paths are regenerable, proves
-it can't touch anything else, shows you the number first, and deletes nothing
+cachewipe draws that line for you, shows the number first, and deletes nothing
 until you say so.
 
 <p align="center">
@@ -69,48 +61,17 @@ until you say so.
   Recorded against a sandbox home; re-render with <code>vhs demo/demo.tape</code>.</sub>
 </p>
 
-## Why you can trust it with `rm`
+Four things make that claim checkable rather than promised:
 
-Any tool that deletes files is asking for a lot of trust. Four reasons to extend
-it here — each one checkable rather than promised.
-
-**The rules are code, not documentation.** cachewipe can only delete paths that a
-target in [`src/targets.rs`](src/targets.rs) resolved; there's no
-arbitrary-path delete anywhere in it. Every candidate then passes
-[`src/safety.rs`](src/safety.rs) — 184 lines you can read in a sitting — which
-refuses `/`, `$HOME`, any ancestor of home, anything shallower than two path
-components, and anything a symlink could reach outside its root. [15 tests](#tests)
-assert this against a real filesystem, including that a dry-run leaves every byte
-in place.
-
-**It refuses when it isn't sure.** A cache with a fresh package-manager lockfile
-is in use, so cachewipe declines it rather than corrupt a running install. That
-check exists because deleting a locked cache mid-operation is exactly how this
-went wrong once.
-
-**It's faster than the tool you'd otherwise reach for.** Sizing is a parallel
-walk ([jwalk](https://crates.io/crates/jwalk)) — one cache directory is usually
-the bulk of a scan, so the walk itself had to be parallel rather than the loop
-over targets. Measured on an M-series Mac, warm cache, three runs:
-
-| Sizing a 193k-file uv cache | Time |
-|---|---|
-| **cachewipe** | **2.4 s** |
-| `du -sk` (same work: stats every file) | 3.8 s |
-| Deleting 20,000 cached files | 3.2 s |
-
-Reproduce with `/usr/bin/time -p cachewipe` and `/usr/bin/time -p du -sk ~/.cache/uv`.
-
-`du` is the fair yardstick because it also `stat`s every file to get sizes. Tools
-like `fd` finish the same directory in under a second, but they only enumerate
-*names* — they never ask the filesystem how big anything is, which is the
-expensive part and the entire point here. If you see a benchmark putting a
-name-only walker against a disk-usage tool, that's what's being compared.
-
-**Nothing leaves your machine.** No network code, no telemetry, three
-dependencies (`serde`, `serde_json`, `jwalk`), and the only subprocess is `docker`
-with fixed arguments. `grep -r reqwest src/` comes back empty. See
-[SECURITY.md](SECURITY.md) for the threat model.
+- **Allowlist, not heuristics** — it can only delete paths resolved from
+  [`src/targets.rs`](src/targets.rs); no arbitrary-path delete exists in the code.
+- **Refuses on doubt** — `/`, `$HOME`, symlink escapes, and caches with a live
+  lockfile are all declined. [`src/safety.rs`](src/safety.rs) is 184 readable
+  lines; [15 tests](#tests) prove it against a real filesystem.
+- **Fast** — sizes a 193k-file cache in **2.4 s**, vs `du -sk`'s 3.8 s on the same
+  directory. [How that's measured →](#benchmarks)
+- **Offline** — no network code, no telemetry, three dependencies.
+  [SECURITY.md](SECURITY.md) has the threat model.
 
 ## Quick start
 
@@ -231,23 +192,17 @@ walks your home directory uninvited. OS caches are off by default because
 
 ## Safety
 
-The reason to trust this over a clever `rm -rf` one-liner: the rules live in
-tested code, not in a README promise.
+Every rule below is enforced in [`src/safety.rs`](src/safety.rs) and asserted by
+[the tests](#tests) — not left as a README promise.
 
-- **Allowlist only** — deletion operates solely on paths resolved from
-  `src/targets.rs`. There is no arbitrary-path delete anywhere in the codebase.
-- **Protected paths refused** — `/`, `$HOME`, any ancestor of home, and anything
-  shallower than two path components are hard-refused.
-- **No symlink escape** — paths are canonicalized and must stay inside their
-  root; symlinks are never traversed while sizing or deleting.
-- **Lock-aware** — a fresh package-manager lockfile marks a cache as in use and
-  cachewipe declines it. Deleting a cache mid-install corrupts it; this check
-  exists because that actually happened.
-- **Docker stays delegated** — `docker system prune -f` only. Never `-a` (would
-  drop tagged images), never `--volumes` (would drop your data).
-- **Dry-run default** — `--apply` is the only way to remove anything.
-
-Read [`src/safety.rs`](src/safety.rs) (184 lines) to check all of that yourself.
+| Guarantee | What it means |
+|---|---|
+| Allowlist only | Deletes only paths resolved from `src/targets.rs`. No arbitrary-path delete exists. |
+| Protected paths | `/`, `$HOME`, any ancestor of home, anything under two components deep — all hard-refused. |
+| No symlink escape | Paths are canonicalized and confined to their root; symlinks are never traversed. |
+| Lock-aware | A fresh package-manager lockfile means "in use" — declined rather than corrupted. |
+| Docker delegated | `docker system prune -f` only. Never `-a` (tagged images), never `--volumes` (your data). |
+| Dry-run default | `--apply` is the only way anything is removed. |
 
 ## Run it weekly
 
@@ -281,6 +236,30 @@ The integration suite builds a real temporary home and asserts on the
 filesystem afterward — that dry-run leaves every byte in place, that `--apply`
 removes exactly what it reported, that a locked cache survives, that OS caches
 stay off without the flag, and that artifacts need a `--root`.
+
+## Benchmarks
+
+M-series Mac, warm cache, best of three:
+
+| Sizing a 193k-file uv cache | Time |
+|---|---|
+| **cachewipe** | **2.4 s** |
+| `du -sk` | 3.8 s |
+
+```bash
+/usr/bin/time -p cachewipe            # sizing
+/usr/bin/time -p du -sk ~/.cache/uv   # same work, for comparison
+```
+
+Deleting 20,000 cached files takes 3.2 s.
+
+Two notes on method, since disk-usage benchmarks are easy to fudge. `du` is the
+right comparison because it also `stat`s every file to get sizes; name-only
+walkers like `fd` clear the same directory in under a second but never ask how
+big anything is, which is the expensive part and the whole job here. And sizing
+is parallel ([jwalk](https://crates.io/crates/jwalk)) because a single cache
+directory is typically most of a scan — one uv cache was 72% of all files walked
+on a real run, so parallelising the loop over targets would have bought nothing.
 
 ## Trust note
 
