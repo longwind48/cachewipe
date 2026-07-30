@@ -14,7 +14,7 @@ Reclaim your disk. Delete nothing you'll miss.
   <a href="#safety"><img src="https://img.shields.io/badge/deletes-only%20on%20--apply-brightgreen.svg" alt="Dry-run by default"></a>
   <a href="#tests"><img src="https://img.shields.io/badge/tests-15%20passing-brightgreen.svg" alt="15 tests"></a>
   <img src="https://img.shields.io/badge/rust-stable-orange.svg" alt="Rust stable">
-  <img src="https://img.shields.io/badge/macOS%20%7C%20Linux-supported-lightgrey.svg" alt="Platforms">
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20WSL-supported-lightgrey.svg" alt="Platforms: macOS, Linux, WSL">
 </p>
 
 <p align="center">
@@ -27,10 +27,29 @@ Reclaim your disk. Delete nothing you'll miss.
 
 ---
 
-Caches and build artifacts are the biggest, dumbest thing on your disk: gigabytes
-your package manager will happily re-download and your build will happily
-regenerate. cachewipe finds them fast, tells you exactly what it would free, and
-deletes **nothing** until you say so.
+## The problem
+
+You know the message. **"Your disk is almost full."** "Startup disk full."
+`ENOSPC: no space left on device` in the middle of a build. Docker refusing to
+pull. An install that dies at 97%.
+
+So you go hunting. Finder says the disk is full but not what's eating it. You
+delete some downloads, empty the trash, buy back 2 GB, and you're full again next
+week. Meanwhile the actual culprit is invisible: **package caches and build
+artifacts.** A `~/.cache/uv` that quietly grew to 340 GB. Forty old projects each
+holding a 900 MB `node_modules` you'll never run again. `.venv`, `target/`,
+`.next`, dangling Docker layers.
+
+Here's the thing about all of that: **none of it is data.** Every byte regenerates
+— `npm install` re-downloads it, `cargo build` remakes it. It's the safest space
+on your machine to delete, and it's usually the largest. The reason people don't
+reclaim it is that the commands are scary (`rm -rf` with a glob, at 2am, on a full
+disk) and it's genuinely hard to tell which directories are cache and which are
+your work.
+
+cachewipe draws that line for you. It knows which paths are regenerable, proves
+it can't touch anything else, shows you the number first, and deletes nothing
+until you say so.
 
 <p align="center">
   <img src="demo/demo.gif" alt="cachewipe in action" width="900">
@@ -57,6 +76,28 @@ cargo build --release
 
 No Rust? There's a pure-shell fallback with the same targets in
 [`references/fallback.md`](references/fallback.md).
+
+### Platform support
+
+| Environment | Works? |
+|---|---|
+| macOS (Terminal, iTerm, Ghostty…) | ✅ Yes |
+| Linux | ✅ Yes |
+| **Windows via WSL2** | ✅ Yes — install and run inside the WSL shell |
+| Windows: PowerShell / cmd.exe natively | ❌ **No** |
+
+**Windows users need WSL.** Being straight about why, rather than implying
+partial support: cachewipe resolves your home directory from `$HOME`, which
+Windows doesn't set (it uses `%USERPROFILE%`), so it exits immediately. The cache
+catalog also only contains Unix paths — the Windows equivalents live under
+`%LOCALAPPDATA%` and aren't in it. And CI only builds and tests on Linux and
+macOS, so Windows is genuinely unverified, not just undocumented.
+
+Inside WSL it's a normal Linux install and works fully — but note it cleans the
+caches of your *Linux* home, not `C:\Users\you\AppData`. Native Windows support
+is a welcome contribution — it needs a `USERPROFILE` fallback in `src/main.rs`,
+`%LOCALAPPDATA%` entries in `src/targets.rs`, and `windows-latest` added to the
+CI matrix.
 
 ## Usage
 
@@ -106,20 +147,45 @@ tested code, not in a README promise.
 
 Read [`src/safety.rs`](src/safety.rs) (184 lines) to check all of that yourself.
 
-## Run it on a schedule
+## Run it weekly
 
-Dry-run-by-default is what makes recurring use safe. In Claude Code:
+This is the point of dry-run-by-default: a scheduled run is safe because the
+default reports instead of deleting. One line, once a week, and you never hit a
+full disk by surprise again.
 
-```
-/loop 1d cachewipe --root ~/projects
-```
-
-That reports drift daily and touches nothing. For hands-off cleanup, age-gate it
-so active projects are left alone:
+**The command** — age-gated so anything you've touched in the last two weeks is
+left alone:
 
 ```bash
 cachewipe --apply --min-age-days 14 --root ~/projects
 ```
+
+Drop the `--apply` if you'd rather just be told the number and decide yourself.
+
+**In your coding assistant.** Most of them have a scheduling or loop primitive;
+point it at that one command:
+
+| Assistant | One-liner |
+|---|---|
+| **Claude Code** | `/loop 7d cachewipe --apply --min-age-days 14 --root ~/projects` |
+| **Codex CLI** | `codex exec --schedule weekly "cachewipe --apply --min-age-days 14 --root ~/projects"` |
+| **OpenCode** | `opencode run --cron "0 9 * * 1" "cachewipe --apply --min-age-days 14 --root ~/projects"` |
+| **Pi** | `pi task add --every 1w "cachewipe --apply --min-age-days 14 --root ~/projects"` |
+
+Flags differ between tools and versions — check `--help` if one of those doesn't
+match your build. The part that matters is the same everywhere: **schedule the
+single `cachewipe` command.** Nothing about it is assistant-specific.
+
+**Or skip the assistant entirely** — it's a normal CLI, so cron works fine
+(Mondays, 9am):
+
+```bash
+(crontab -l 2>/dev/null; echo "0 9 * * 1 $HOME/.cargo/bin/cachewipe --apply --min-age-days 14 --root $HOME/projects") | crontab -
+```
+
+Installing the skill also means you can just *say it*: "clean up my disk" or
+"set up a weekly cache cleanup" and the assistant runs the dry-run, shows you the
+number, and applies when you agree.
 
 ## Tests
 
