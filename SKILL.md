@@ -24,6 +24,19 @@ Dry-run first, always. A bare run tells the user what's reclaimable and deletes
 nothing. Only add `--apply` after they've seen the plan (or explicitly asked to
 just clean it).
 
+## Invoked with nothing to go on
+
+`/cachewipe` with no arguments is the common case, so handle it without a round
+of questions. Package caches need no configuration — scan them immediately. Build
+artifacts need a `--root`, so infer one rather than asking: if the current
+directory is inside a git repo or a projects tree, use that; otherwise check for
+a conventional `~/projects`, `~/code`, `~/dev`, or `~/src` and name the one you
+picked in your summary so the user can correct it. If none exists, report package
+caches alone and mention that passing a directory would also cover build
+artifacts. Only ask when the user says something ambiguous like "clean
+everything" — there, confirming beats guessing, because `--include-os-caches` is
+the one flag that can remove something a user might miss.
+
 ## Step 1: Ensure the binary exists
 
 The tool is a small Rust binary. Build it once; reuse forever. From the skill

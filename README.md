@@ -66,24 +66,27 @@ until you say so.
 npx skills add longwind48/cachewipe
 ```
 
-**2. Ask for space back.** No flags to learn — just say what you want:
+**2. Call it.** No flags to learn:
 
 ```
-I'm low on disk space, clean up my caches
+/cachewipe
 ```
 
-It reports what it found, waits for your OK, then reclaims it.
+It reports what it found, waits for your OK, then reclaims it. You can add
+context in the same breath — `/cachewipe ~/projects` or `/cachewipe just tell me
+what's reclaimable` — or skip the slash entirely and say "I'm low on disk space",
+which triggers it too.
 
-**3. Make it automatic.** Schedule it in plain words and stop thinking about
+**3. Make it automatic.** Wrap that call in a weekly loop and stop thinking about
 disk space:
 
 ```
-/loop 7d free up disk space in ~/projects, skipping anything used in the last two weeks
+/loop 7d /cachewipe
 ```
 
-That's Claude Code's `/loop`; other assistants have their own scheduling verb and
-the phrasing is the same. The skill handles the rest — it dry-runs first and
-age-gates so your active projects are left alone.
+That's Claude Code's `/loop`; other assistants have their own scheduling verb.
+The skill handles the rest — it dry-runs first and age-gates so the project
+you're actively building never disappears from under you.
 
 <details>
 <summary><b>Prefer the raw CLI?</b> It's a normal binary — no assistant needed.</summary>
