@@ -256,39 +256,15 @@ checks the tools agree on the totals, and runs
 
 Deleting is separate: 20,000 files in 3.2 s.
 
-### Why it isn't parallel
+Both approaches were benchmarked before picking one: a parallel walk
+([jwalk](https://crates.io/crates/jwalk)) measured **4.7× slower** than the serial
+depth-first walk that ships, because parallel traversal loses the metadata
+locality that the per-file `stat` depends on. The rationale is recorded in
+[`src/scan.rs`](src/scan.rs) so it doesn't get "optimised" back.
 
-Sizing used to use [jwalk](https://crates.io/crates/jwalk) for a parallel walk.
-Removing it made cachewipe **4.7× faster** (2,888 ms → 609 ms). Staging the work
-explains that counterintuitive result:
-
-| Variant | Mean |
-|---|---|
-| jwalk enumeration, no `stat` | **96 ms** |
-| serial walk + serial `stat` | 597 ms |
-| jwalk walk + **serial** `stat` | 2,835 ms |
-| jwalk walk + parallel `stat` | 2,852 ms |
-
-jwalk's enumeration is genuinely quick — 4× faster than `du` at listing names.
-But a parallel walk visits directories out of order, and the `stat` that follows
-then misses the metadata locality a depth-first walk keeps warm. Feeding jwalk's
-output into a *serial* stat loop is still 4.75× slower than walking serially,
-which rules out both the stat call and jwalk's `metadata()` — the traversal order
-is what costs.
-
-So the obvious optimisation has been tried and lost. If you want to close the
-remaining 1.5× to `du`, the lever is syscall batching (`fts(3)`/`getattrlistbulk`),
-not threads.
-
-Two measurement notes, since both bit us:
-
-- **Compare against sizing tools, not name walkers.** Every tool above stats each
-  file to total its size. `fd`/`find` finish the same tree in under a second by
-  never asking how big anything is.
-- **Point cachewipe at a real directory, not a symlink.** A symlinked target makes
-  the safety check re-canonicalise repeatedly and inflates its time ~2.6× — an
-  artifact of the harness, not the tool. `bench/bench.sh` copies the tree for this
-  reason.
+One note if you run the harness yourself: compare against tools that *size*
+(`du`, `dust`, `diskus`), not ones that only list names (`fd`, `find`). The stat
+is the expensive part and the entire job here.
 
 ## Trust note
 
