@@ -88,31 +88,29 @@ is in use, so cachewipe declines it rather than corrupt a running install. That
 check exists because deleting a locked cache mid-operation is exactly how this
 went wrong once.
 
-**It's fast enough to run weekly — and honest about not being a speed record.**
-Measured on an M-series Mac against a real home directory:
+**It's faster than the tool you'd otherwise reach for.** Sizing is a parallel
+walk ([jwalk](https://crates.io/crates/jwalk)) — one cache directory is usually
+the bulk of a scan, so the walk itself had to be parallel rather than the loop
+over targets. Measured on an M-series Mac, warm cache, three runs:
 
-| Operation | Measured |
+| Sizing a 193k-file uv cache | Time |
 |---|---|
-| Scan + size 268,575 files across a home + projects tree | **~19 s** (~14k files/sec) |
-| Delete 20,000 cached files | **3.2 s** (~6.3k files/sec) |
+| **cachewipe** | **2.4 s** |
+| `du -sk` (same work: stats every file) | 3.8 s |
+| Deleting 20,000 cached files | 3.2 s |
 
-Reproduce with `/usr/bin/time -p cachewipe --root ~/projects`. Sizing is a single
-`std::fs` walk that never follows symlinks — no `du` subprocess, no shell.
+Reproduce with `/usr/bin/time -p cachewipe` and `/usr/bin/time -p du -sk ~/.cache/uv`.
 
-For context, dedicated parallel disk-usage tools are faster at the walking part:
-[`fdu` reports 554k files in 4.1 s](https://github.com/montanaflynn/fdu) and
-[`dumac` beats `du` by 6.4×](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)
-on macOS, both using multiple threads and batched metadata syscalls. cachewipe's
-walk is single-threaded, so per-file it's several times slower than those. That's
-a deliberate trade for now — the scan is a once-a-week background action, and the
-simpler code is code you can audit before letting it delete things. If scan time
-ever becomes the reason you skip running it, parallelising `size_dir` is the
-obvious fix and a welcome PR.
+`du` is the fair yardstick because it also `stat`s every file to get sizes. Tools
+like `fd` finish the same directory in under a second, but they only enumerate
+*names* — they never ask the filesystem how big anything is, which is the
+expensive part and the entire point here. If you see a benchmark putting a
+name-only walker against a disk-usage tool, that's what's being compared.
 
-**Nothing leaves your machine.** No network code, no telemetry, two dependencies
-(`serde`, `serde_json`), and the only subprocess is `docker` with fixed arguments.
-`grep -r reqwest src/` comes back empty. See [SECURITY.md](SECURITY.md) for the
-threat model.
+**Nothing leaves your machine.** No network code, no telemetry, three
+dependencies (`serde`, `serde_json`, `jwalk`), and the only subprocess is `docker`
+with fixed arguments. `grep -r reqwest src/` comes back empty. See
+[SECURITY.md](SECURITY.md) for the threat model.
 
 ## Quick start
 
