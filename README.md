@@ -61,16 +61,26 @@ until you say so.
   Recorded against a sandbox home; re-render with <code>vhs demo/demo.tape</code>.</sub>
 </p>
 
-Four things make that claim checkable rather than promised:
+### It's a harness, not a prompt
 
-- **Allowlist, not heuristics** — it can only delete paths resolved from
-  [`src/targets.rs`](src/targets.rs); no arbitrary-path delete exists in the code.
-- **Refuses on doubt** — `/`, `$HOME`, symlink escapes, and caches with a live
-  lockfile are all declined. [`src/safety.rs`](src/safety.rs) is 184 readable
-  lines; [15 tests](#tests) prove it against a real filesystem.
-- **Fast, and measured against real competitors** — sizes 200k files in 609 ms,
-  within 1.5× of `du` and ~6× quicker than `dust`. Harness included, so you can
-  check. [See the numbers →](#benchmarks)
+Ask an agent to free up disk space and it will improvise `rm -rf` from a bash
+tool. That works right up until it doesn't: bash hands the harness an opaque
+command string, so nothing can inspect what's about to be deleted or stop it.
+
+cachewipe replaces that with a **dedicated, gated tool**. Deletion becomes a typed
+action the harness can intercept and audit instead of a shell string it has to
+trust:
+
+- **Bounded** — deletes only paths resolved from an explicit catalog
+  ([`src/targets.rs`](src/targets.rs)). No arbitrary-path delete exists in the code,
+  so no prompt can talk it into one.
+- **Refuses on doubt** — `/`, `$HOME`, symlink escapes and caches held by a live
+  lockfile are declined. [`src/safety.rs`](src/safety.rs) is 184 readable lines;
+  [15 tests](#tests) prove it against a real filesystem.
+- **Dry-run by default** — reports first, deletes only on `--apply`, so a
+  scheduled run can't surprise you.
+- **Scanning chosen by measurement, not vibes** — 200k files in 609 ms, faster
+  than every Rust/Go disk-usage tool it was [benchmarked](#benchmarks) against.
 - **Offline** — no network code, no telemetry, two dependencies (`serde`,
   `serde_json`). [SECURITY.md](SECURITY.md) has the threat model.
 
@@ -240,31 +250,16 @@ stay off without the flag, and that artifacts need a `--root`.
 
 ## Benchmarks
 
-Reproduce everything below with `bash bench/bench.sh` — it generates the tree,
-checks the tools agree on the totals, and runs
-[hyperfine](https://github.com/sharkdp/hyperfine).
+Sizing 200k files (~800 MB), M4 Mac / APFS, via `bash bench/bench.sh`
+([hyperfine](https://github.com/sharkdp/hyperfine), 10 runs):
 
-**Sizing 200,000 files (4 KiB each, ~800 MB) on an M4 Mac, APFS, warm cache.**
-10 runs, 3 warmups:
+| `du -sk` | **cachewipe** | `dust` | `diskus` |
+|---|---|---|---|
+| 408 ms | **609 ms** | 3,961 ms | 5,008 ms |
 
-| Tool | Mean | vs `du` |
-|---|---|---|
-| `du -sk` (C, `fts(3)`) | **408 ms** ± 10 | 1.00× |
-| **cachewipe** | **609 ms** ± 44 | 1.49× slower |
-| `dust` | 3,961 ms ± 174 | 9.7× slower |
-| `diskus` | 5,008 ms ± 405 | 12.3× slower |
-
-Deleting is separate: 20,000 files in 3.2 s.
-
-Both approaches were benchmarked before picking one: a parallel walk
-([jwalk](https://crates.io/crates/jwalk)) measured **4.7× slower** than the serial
-depth-first walk that ships, because parallel traversal loses the metadata
-locality that the per-file `stat` depends on. The rationale is recorded in
-[`src/scan.rs`](src/scan.rs) so it doesn't get "optimised" back.
-
-One note if you run the harness yourself: compare against tools that *size*
-(`du`, `dust`, `diskus`), not ones that only list names (`fd`, `find`). The stat
-is the expensive part and the entire job here.
+Faster than the Rust/Go disk-usage tools, within 1.5× of C `du`. A parallel walk
+was tried and measured 4.7× *slower* — see [`src/scan.rs`](src/scan.rs) for why,
+before you optimise it back.
 
 ## Trust note
 
