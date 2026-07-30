@@ -60,24 +60,42 @@ until you say so.
 
 ## Quick start
 
+**1. Install it** into whichever coding assistants you use:
+
 ```bash
-# 1. install
 npx skills add longwind48/cachewipe
-
-# 2. see what you'd get back — this deletes nothing
-cachewipe --root ~/projects
-
-# 3. reclaim it
-cachewipe --apply --root ~/projects
 ```
 
-That's the whole tool. Step 2 prints a table of every cache it found with a total
-at the bottom; step 3 does it for real. If you'd rather not think about it again,
-[schedule it weekly](#run-it-weekly).
+**2. Ask for space back.** No flags to learn — just say what you want:
 
-Using a coding assistant? The install in step 1 also registers cachewipe as a
-skill, so you can skip the flags entirely and just say **"I'm low on disk space"**
-or **"clean up my build caches"**.
+```
+I'm low on disk space, clean up my caches
+```
+
+It reports what it found, waits for your OK, then reclaims it.
+
+**3. Make it automatic.** Schedule it in plain words and stop thinking about
+disk space:
+
+```
+/loop 7d free up disk space in ~/projects, skipping anything used in the last two weeks
+```
+
+That's Claude Code's `/loop`; other assistants have their own scheduling verb and
+the phrasing is the same. The skill handles the rest — it dry-runs first and
+age-gates so your active projects are left alone.
+
+<details>
+<summary><b>Prefer the raw CLI?</b> It's a normal binary — no assistant needed.</summary>
+
+```bash
+cachewipe --root ~/projects            # report; deletes nothing
+cachewipe --apply --root ~/projects    # reclaim it
+```
+
+See [All the flags](#all-the-flags) and [Install](#install) for building from
+source.
+</details>
 
 ## Install
 
@@ -176,43 +194,25 @@ Read [`src/safety.rs`](src/safety.rs) (184 lines) to check all of that yourself.
 
 ## Run it weekly
 
-This is the point of dry-run-by-default: a scheduled run is safe because the
-default reports instead of deleting. One line, once a week, and you never hit a
-full disk by surprise again.
+Scheduling is where this earns its keep: you stop discovering the problem at the
+moment a build dies. [Quick start step 3](#quick-start) shows the one-liner —
+this is the detail behind it.
 
-**The command** — age-gated so anything you've touched in the last two weeks is
-left alone:
+**Why it's safe to automate.** Two defaults do the work. Dry-run means a
+scheduled run reports unless you explicitly asked it to delete, and
+`--min-age-days` skips anything you've touched recently, so the `node_modules` of
+whatever you're actively building never disappears from under you. Ask for a
+weekly *report* rather than a cleanup and you'll get that instead — the skill
+follows the intent you state.
 
-```bash
-cachewipe --apply --min-age-days 14 --root ~/projects
-```
-
-Drop the `--apply` if you'd rather just be told the number and decide yourself.
-
-**In your coding assistant.** Most of them have a scheduling or loop primitive;
-point it at that one command:
-
-| Assistant | One-liner |
-|---|---|
-| **Claude Code** | `/loop 7d cachewipe --apply --min-age-days 14 --root ~/projects` |
-| **Codex CLI** | `codex exec --schedule weekly "cachewipe --apply --min-age-days 14 --root ~/projects"` |
-| **OpenCode** | `opencode run --cron "0 9 * * 1" "cachewipe --apply --min-age-days 14 --root ~/projects"` |
-| **Pi** | `pi task add --every 1w "cachewipe --apply --min-age-days 14 --root ~/projects"` |
-
-Flags differ between tools and versions — check `--help` if one of those doesn't
-match your build. The part that matters is the same everywhere: **schedule the
-single `cachewipe` command.** Nothing about it is assistant-specific.
-
-**Or skip the assistant entirely** — it's a normal CLI, so cron works fine
-(Mondays, 9am):
+**Prefer a plain cron job?** It's an ordinary CLI, so schedule the command
+directly — Mondays at 9am, age-gated to two weeks:
 
 ```bash
 (crontab -l 2>/dev/null; echo "0 9 * * 1 $HOME/.cargo/bin/cachewipe --apply --min-age-days 14 --root $HOME/projects") | crontab -
 ```
 
-Installing the skill also means you can just *say it*: "clean up my disk" or
-"set up a weekly cache cleanup" and the assistant runs the dry-run, shows you the
-number, and applies when you agree.
+Drop `--apply` if you'd rather be told the number and decide for yourself.
 
 ## Tests
 
