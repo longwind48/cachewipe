@@ -269,6 +269,23 @@ anything that can delete files, skim the source — it's deliberately small
 everything else) — or pin to a tagged commit instead of `main`. The binary is
 compiled locally from that source; nothing prebuilt is ever downloaded.
 
+## Contributing
+
+Two things would help most: **more cache targets** (add an entry to
+[`src/targets.rs`](src/targets.rs) with its regeneration story — that's the whole
+change) and **native Windows support** (`%USERPROFILE%` fallback,
+`%LOCALAPPDATA%` paths, `windows-latest` in CI). Issues and PRs welcome.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+<p align="center">
+  <a href="https://star-history.com/#longwind48/cachewipe&Date">
+    <img src="https://api.star-history.com/svg?repos=longwind48/cachewipe&type=Date" alt="Star history" width="600">
+  </a>
+</p>
+
+<p align="center"><sub>If cachewipe got you some disk space back, a ⭐ helps others find it.</sub></p>
