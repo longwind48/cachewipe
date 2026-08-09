@@ -22,7 +22,7 @@ Reclaim your disk. Delete nothing you'll miss.
   <a href="#install">Install</a> ·
   <a href="#what-it-cleans">What it cleans</a> ·
   <a href="#safety">Safety</a> ·
-  <a href="#benchmarks">Benchmarks</a> ·
+  <a href="#why-not-just-du">Why not <code>du</code>?</a> ·
   <a href="#run-it-weekly">Run it weekly</a> ·
   <a href="SECURITY.md">Security</a>
 </p>
@@ -80,7 +80,7 @@ trust:
 - **Dry-run by default** — reports first, deletes only on `--apply`, so a
   scheduled run can't surprise you.
 - **Scanning chosen by measurement, not vibes** — 200k files in 609 ms, faster
-  than every Rust/Go disk-usage tool it was [benchmarked](#benchmarks) against.
+  than every Rust/Go disk-usage tool it was [benchmarked](#why-not-just-du) against.
 - **Offline** — no network code, no telemetry, two dependencies (`serde`,
   `serde_json`). [SECURITY.md](SECURITY.md) has the threat model.
 
@@ -248,18 +248,27 @@ filesystem afterward — that dry-run leaves every byte in place, that `--apply`
 removes exactly what it reported, that a locked cache survives, that OS caches
 stay off without the flag, and that artifacts need a `--root`.
 
-## Benchmarks
+## Why not just `du`?
 
-Sizing 200k files (~800 MB), M4 Mac / APFS, via `bash bench/bench.sh`
+Because sizing is one step of the job, not the job. cachewipe resolves a catalog
+of cache targets, runs each through the safety guards (protected-path,
+symlink-confinement, lock detection), sizes it, and — on `--apply` — deletes it.
+`du` only does the sizing, and shelling out to it would split the safety checks
+and the measurement across two processes, add a dependency on flags that differ
+between BSD and GNU `du`, and force parsing external text instead of owning a
+typed result.
+
+So sizing stays in-process. And it's fast enough that this costs you nothing —
+200k files (~800 MB), M4 Mac / APFS, `bash bench/bench.sh`
 ([hyperfine](https://github.com/sharkdp/hyperfine), 10 runs):
 
 | `du -sk` | **cachewipe** | `dust` | `diskus` |
 |---|---|---|---|
 | 408 ms | **609 ms** | 3,961 ms | 5,008 ms |
 
-Faster than the Rust/Go disk-usage tools, within 1.5× of C `du`. A parallel walk
-was tried and measured 4.7× *slower* — see [`src/scan.rs`](src/scan.rs) for why,
-before you optimise it back.
+Within 1.5× of C `du`, and faster than the Rust/Go disk-usage tools. A parallel
+walk was tried and measured 4.7× *slower* — see [`src/scan.rs`](src/scan.rs)
+before you re-add threads.
 
 ## Trust note
 
