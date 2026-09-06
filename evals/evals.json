@@ -1,11 +1,11 @@
 {
   "skill_name": "cachewipe",
-  "notes": "Runs against a disposable fake $HOME built by evals/make-fixture.sh. A sandbox is mandatory rather than cosmetic: eval-1 asks for --apply, and pointing that at the real home would delete the grader's own machine. The fixture encodes one case per known failure mode.",
+  "notes": "Runs against a disposable fake $HOME built by evals/make-fixture.sh. A sandbox is mandatory rather than cosmetic: eval-1 asks for --apply, and pointing that at the real home would delete the grader's own machine. Pass --no-external on every run \u2014 $HOME confines the path targets but not the delegated cleanups, which are subprocesses that reach the real Docker and Homebrew. The fixture encodes one case per known failure mode.",
   "evals": [
     {
       "id": 0,
       "name": "disk-triage-report-only",
-      "prompt": "My MacBook is basically out of space and Docker feels like it's eating the whole drive. I've set up a sandbox home directory at {FIXTURE} — treat that as my home (export HOME={FIXTURE}) so we don't touch my real files. Tell me what I can safely reclaim and roughly how much. Don't delete anything yet.",
+      "prompt": "My MacBook is basically out of space and Docker feels like it's eating the whole drive. I've set up a sandbox home directory at {FIXTURE} \u2014 treat that as my home (export HOME={FIXTURE}) so we don't touch my real files. Tell me what I can safely reclaim and roughly how much. Don't delete anything yet.",
       "expected_output": "A dry-run report that finds the macOS-location caches (pnpm store, pip), sizes the container VM disks instead of showing them as 0, names the flag needed to remove them, and leaves the fixture completely intact.",
       "files": [],
       "assertions": [
@@ -20,7 +20,7 @@
     {
       "id": 1,
       "name": "apply-with-projects",
-      "prompt": "Go ahead and actually clean it up for real, including my projects folder. Sandbox home is {FIXTURE} — treat it as my home. My projects live in {FIXTURE}/projects. Free as much as you safely can, but I must not lose any of my data.",
+      "prompt": "Go ahead and actually clean it up for real, including my projects folder. Sandbox home is {FIXTURE} \u2014 treat it as my home. My projects live in {FIXTURE}/projects. Free as much as you safely can, but I must not lose any of my data.",
       "expected_output": "An --apply run that removes package caches and genuine build output, preserves the data directory that merely happens to be named target/, does not touch VM disks without an explicit opt-in, and reports a total that is not inflated by nested double-counting.",
       "files": [],
       "assertions": [

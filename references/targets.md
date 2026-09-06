@@ -93,6 +93,12 @@ VM; on macOS and Windows the host may never get those blocks back. If the goal i
 host disk space, the `docker-desktop-disk` target below is what delivers it.
 These entries are reported without a size because the engine owns those numbers.
 
+**These are the only targets that are not confined by `$HOME`.** Every path
+target resolves under `$HOME`, so redirecting it sandboxes the run — but a
+delegated cleanup is a subprocess that reads its own config and reaches the real
+machine whatever `$HOME` says. Pass `--no-external` when running against a
+fixture or scratch home; an `--apply` run with a redirected `$HOME` also warns.
+
 ## Container VM disks — always reported, OFF by default to delete
 
 | id | path | on delete |
