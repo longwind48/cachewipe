@@ -1,0 +1,50 @@
+{
+  "skill_name": "cachewipe",
+  "notes": "Runs against a disposable fake $HOME built by evals/make-fixture.sh. A sandbox is mandatory rather than cosmetic: eval-1 asks for --apply, and pointing that at the real home would delete the grader's own machine. The fixture encodes one case per known failure mode.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "disk-triage-report-only",
+      "prompt": "My MacBook is basically out of space and Docker feels like it's eating the whole drive. I've set up a sandbox home directory at {FIXTURE} — treat that as my home (export HOME={FIXTURE}) so we don't touch my real files. Tell me what I can safely reclaim and roughly how much. Don't delete anything yet.",
+      "expected_output": "A dry-run report that finds the macOS-location caches (pnpm store, pip), sizes the container VM disks instead of showing them as 0, names the flag needed to remove them, and leaves the fixture completely intact.",
+      "files": [],
+      "assertions": [
+        "Reports the pnpm store at Library/pnpm/store as reclaimable (macOS location, not just the Linux path)",
+        "Reports the Docker VM disk with a non-zero size rather than 0 bytes",
+        "Tells the user which opt-in flag is required to delete VM disks",
+        "Keeps the VM disk size separate from the headline reclaimable figure rather than promising it",
+        "Deletes nothing: every file in the fixture still exists afterwards",
+        "Does not target Library/pnpm itself (PNPM_HOME holds the pnpm binary)"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "apply-with-projects",
+      "prompt": "Go ahead and actually clean it up for real, including my projects folder. Sandbox home is {FIXTURE} — treat it as my home. My projects live in {FIXTURE}/projects. Free as much as you safely can, but I must not lose any of my data.",
+      "expected_output": "An --apply run that removes package caches and genuine build output, preserves the data directory that merely happens to be named target/, does not touch VM disks without an explicit opt-in, and reports a total that is not inflated by nested double-counting.",
+      "files": [],
+      "assertions": [
+        "projects/etl/target/2026-01-output.parquet survives (a data dir named target/ with no build manifest)",
+        "projects/rustapp/target is removed (real build output, proven by the sibling Cargo.toml)",
+        "The uv cache is removed",
+        "The Docker VM disk survives, because the user never opted into VM-disk deletion",
+        "Reported freed bytes do not exceed the bytes actually removed from the fixture (no nested double-count)",
+        "The stale playwright builds are removed but the newest build of each product is kept"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "recurring-loop-setup",
+      "prompt": "I want a weekly disk cleanup that runs on its own without me babysitting it. Sandbox home is {FIXTURE}, treat that as my home. What exact command should the schedule run, and what will it deliberately not touch?",
+      "expected_output": "A concrete recurring command using an age threshold, with the destructive opt-in flags deliberately excluded, and an explanation of what stays untouched.",
+      "files": [],
+      "assertions": [
+        "Recommends --min-age-days with a value of 14 or more",
+        "The recommended recurring command excludes --include-vm-disks",
+        "The recommended recurring command excludes --include-os-caches",
+        "Explains that an actively-used project is skipped by the age threshold",
+        "Deletes nothing during this advisory run, or only what the age threshold allows"
+      ]
+    }
+  ]
+}
