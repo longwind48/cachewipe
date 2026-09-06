@@ -142,6 +142,16 @@ the one that delivers it, not the prune. Everything else is a bounded
 `remove_dir_all`/`remove_file` of a path the tool already proved is inside an
 allowed location.
 
+### Testing against a fake `$HOME`? Pass `--no-external`
+
+Pointing `$HOME` at a scratch directory sandboxes every *path* target, which
+makes it the natural way to try the tool safely. It does not sandbox the
+delegated cleanups: those are subprocesses that read their own config, so
+`docker system prune` and `brew cleanup` hit the real machine regardless of
+`$HOME`. Add `--no-external` for any run against a fixture or scratch home. An
+`--apply` run with a redirected `$HOME` prints a warning saying the same thing,
+but the flag is what actually keeps the run contained.
+
 ## Running in a /loop
 
 This is the intended recurring-cleanup mode. Because dry-run is the default, a

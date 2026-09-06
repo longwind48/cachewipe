@@ -52,6 +52,15 @@ struct Config {
     scan_roots: Vec<PathBuf>,
     json: bool,
     top: usize,
+    /// Skip delegated cleanups entirely.
+    ///
+    /// Every other target is a path under `$HOME`, so pointing `$HOME` at a
+    /// scratch directory fully sandboxes the run. Delegated cleanups break that
+    /// property: they are subprocesses that consult their own config, so
+    /// `docker system prune` and `brew cleanup` reach the real machine no matter
+    /// what `$HOME` says. Anyone testing against a fake home needs a way to turn
+    /// them off, or the "sandbox" quietly isn't one.
+    no_external: bool,
 }
 
 /// A resolved deletion candidate, before it has been sized or judged.
@@ -72,6 +81,7 @@ fn parse_args() -> Result<Config, String> {
         scan_roots: Vec::new(),
         json: false,
         top: 12,
+        no_external: false,
     };
     let mut args = env::args().skip(1);
     while let Some(a) = args.next() {
@@ -79,6 +89,7 @@ fn parse_args() -> Result<Config, String> {
             "--apply" => cfg.apply = true,
             "--include-os-caches" => cfg.include_os_caches = true,
             "--include-vm-disks" => cfg.include_vm_disks = true,
+            "--no-external" => cfg.no_external = true,
             "--json" => cfg.json = true,
             "--min-age-days" => {
                 let v = args.next().ok_or("--min-age-days needs a value")?;
@@ -119,7 +130,12 @@ fn print_help() {
          \x20                     destroys every local image, container and named\n\
          \x20                     volume for that engine, so it needs this flag.\n\
          --min-age-days N      only touch things whose newest file is older than N\n\
-         --top N               how many individual paths to list (default 12)\n\n\
+         --top N               how many individual paths to list (default 12)\n\
+         --no-external         skip delegated cleanups (docker prune, brew cleanup).\n\
+         \x20                     Those are subprocesses that read their own config,\n\
+         \x20                     so they reach the real machine even when $HOME is\n\
+         \x20                     pointed at a scratch dir. Pass this whenever you\n\
+         \x20                     are testing against a fake home.\n\n\
          Exit code 0 = success. Machine-readable output with --json:\n\
          {{ dry_run, total_reclaimable_bytes, total_opt_in_bytes,\n\
          \x20 total_deleted_bytes, free_bytes_before, free_bytes_after,\n\
@@ -144,6 +160,20 @@ fn main() {
     }
     let home_path = PathBuf::from(&home);
 
+    // Warn at the only moment this can actually bite: a mutating run whose
+    // $HOME has been redirected. Every path target is then sandboxed, but the
+    // delegated cleanups are not, so the operator is about to prune the real
+    // machine while believing they are in a scratch dir.
+    if cfg.apply && !cfg.no_external && home_is_overridden(&home) {
+        eprintln!(
+            "warning: $HOME is {home}, which is not this user's login home.\n\
+             \x20        Path targets are confined to it, but delegated cleanups\n\
+             \x20        (docker prune, brew cleanup) are subprocesses that read\n\
+             \x20        their own config and will affect the REAL machine.\n\
+             \x20        Pass --no-external to keep this run inside the sandbox."
+        );
+    }
+
     let report = run(&cfg, &home, &home_path);
 
     if cfg.json {
@@ -151,6 +181,28 @@ fn main() {
     } else {
         print_human(&report, cfg.top);
     }
+}
+
+/// Does `$HOME` look redirected away from this user's login home?
+///
+/// Deliberately a convention check rather than a passwd lookup: reading the
+/// password database would mean a new dependency for a hint, and the cost of
+/// being wrong is only a warning either way. Unknown `$USER` means no opinion,
+/// so unusual setups stay quiet instead of crying wolf.
+fn home_is_overridden(home: &str) -> bool {
+    let Ok(user) = env::var("USER") else {
+        return false;
+    };
+    if user.is_empty() {
+        return false;
+    }
+    let conventional = [
+        format!("/Users/{user}"),
+        format!("/home/{user}"),
+        "/var/root".to_string(),
+        "/root".to_string(),
+    ];
+    !conventional.iter().any(|c| c == home)
 }
 
 /// Is this tier deletable under the current flags?
@@ -271,7 +323,7 @@ fn run(cfg: &Config, home: &str, home_path: &Path) -> Report {
         } = target.kind
         {
             let _ = idx;
-            if !deletable(target.tier, cfg) {
+            if cfg.no_external || !deletable(target.tier, cfg) {
                 continue;
             }
             handle_external(&mut items, cfg, target, probe, apply_args, note);

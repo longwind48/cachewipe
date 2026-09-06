@@ -232,6 +232,63 @@ fn keeps_newest_version_per_product() {
 }
 
 #[test]
+fn no_external_suppresses_delegated_cleanups() {
+    let home = scratch("noexternal");
+    write_file(&home.join(".cache/uv/archive/wheel.bin"), 2048);
+
+    // Delegated cleanups are subprocesses reading their own config, so they
+    // escape a $HOME-based sandbox. --no-external must drop them entirely
+    // rather than merely reporting them.
+    let json = run(&home, &["--no-external"]);
+    assert!(
+        !json.contains("\"id\": \"docker\""),
+        "--no-external must not emit the docker target: {json}"
+    );
+    assert!(
+        !json.contains("\"id\": \"homebrew\""),
+        "--no-external must not emit the homebrew target: {json}"
+    );
+    // Path targets are unaffected — the sandbox is still fully scanned.
+    assert!(reclaimable_for(&json, "uv"), "path targets must still run");
+
+    fs::remove_dir_all(&home).ok();
+}
+
+#[test]
+fn warns_when_applying_with_a_redirected_home() {
+    let home = scratch("homewarn");
+    write_file(&home.join(".cache/uv/archive/wheel.bin"), 1024);
+
+    // A mutating run under a scratch $HOME is exactly when the operator needs
+    // to know the delegated cleanups are not sandboxed.
+    let out = Command::new(bin())
+        .env("HOME", &home)
+        .env("USER", "alice")
+        .arg("--apply")
+        .output()
+        .expect("run cachewipe");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--no-external"),
+        "an --apply run with a redirected HOME must point at the escape hatch; got: {stderr}"
+    );
+
+    // With the flag, there is nothing to warn about.
+    let quiet = Command::new(bin())
+        .env("HOME", &home)
+        .env("USER", "alice")
+        .args(["--apply", "--no-external"])
+        .output()
+        .expect("run cachewipe");
+    assert!(
+        !String::from_utf8_lossy(&quiet.stderr).contains("warning:"),
+        "no warning once externals are disabled"
+    );
+
+    fs::remove_dir_all(&home).ok();
+}
+
+#[test]
 fn finds_pnpm_store_in_the_macos_location() {
     let home = scratch("pnpm");
     // The store lives under ~/Library on macOS. Checking only the Linux path
